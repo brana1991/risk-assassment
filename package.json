@@ -1,0 +1,33 @@
+{
+  "name": "risk-assessment-app",
+  "version": "1.0.0",
+  "description": "Risk assassment",
+  "main": "app.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "--test",
+    "dev": "nodemon --exec ts-node-dev src/app.ts",
+    "build": "tsc",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "author": "Branislav",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^8.42.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "nodemon": "^2.0.22",
+    "prettier": "^2.8.8",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "@types/express": "^4.17.17",
+    "docx": "^8.0.4",
+    "express": "^4.18.2",
+    "mysql": "^2.18.1",
+    "reflect-metadata": "^0.1.13",
+    "typeorm": "^0.3.16"
+  }
+}
