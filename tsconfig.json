@@ -7,5 +7,25 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true, 
     "resolveJsonModule": true,
+    "outDir": "./dist", // Output directory set to the current directory
+    "rootDir": "./src", // Root directory for TypeScript files
+    "allowJs": true,
+    "strict": false,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true
   },
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs",
+      "target": "es2017"
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
 }
+
+

@@ -1,12 +1,8 @@
-import 'reflect-metadata';
+// const { AppDataSource } = require("./orm");
 const express = require("express");
-import { AppDataSource } from './app-data-source';
 
 async function main() {
   try {
-    // Establish database connection
-    await AppDataSource.initialize();
-
     // Create and setup express app
     const app = express();
     app.use(express.json());
@@ -16,6 +12,10 @@ async function main() {
     // Start express server
     app.listen(3000, () => {
       console.log("Express server is running on port 3000");
+    });
+
+    app.get("/", (req, res) => {
+      res.send("Hello, Express!");
     });
   } catch (error) {
     console.error("Error connecting to the database:", error);
