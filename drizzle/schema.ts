@@ -20,8 +20,17 @@ export const userTable = sqliteTable('users', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at'),
   isActive: integer('is_active'),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
+  isLoggedIn: integer('is_logged_in').notNull().default(0),
 });
 
+export const tokenTable = sqliteTable('tokens', {
+  id: integer('id').primaryKey().notNull(),
+  userId: integer('user_id').notNull(),
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull(),
+});
+
+export type Token = InferSelectModel<typeof tokenTable>;
 export type User = InferSelectModel<typeof userTable>;

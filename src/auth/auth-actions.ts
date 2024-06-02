@@ -7,8 +7,10 @@ import {
   KeyLike,
   SignJWT,
 } from 'jose';
-import { User } from '../../drizzle/schema';
+import { tokenTable, User } from '../../drizzle/schema';
 import { cookies } from 'next/headers';
+import { db } from '@/root/drizzle/client';
+import { eq } from 'drizzle-orm';
 
 const claims = {
   protectedHeader: {
@@ -73,12 +75,14 @@ export async function decodeJWT(
   token: string,
   publicKey: KeyLike | Uint8Array,
   options?: JWTVerifyOptions,
-): Promise<JWTVerifyResult> {
+): Promise<JWTVerifyResult<JWTPayload> | { invalidToken: boolean }> {
   try {
-    return await jwtVerify(token, publicKey, { currentDate: new Date(0) });
+    return await jwtVerify(token, publicKey, options);
   } catch (error) {
-    console.error('Error verifying token:', error);
-    throw new Error('Error verifying token');
+    if ((error as { code: string }).code === 'ERR_JWT_EXPIRED') {
+      return jwtVerify(token, publicKey, { ...options, currentDate: new Date(0) });
+    }
+    return { invalidToken: true };
   }
 }
 
@@ -102,20 +106,6 @@ export async function setAuthCookies(username: User['username']) {
   }
 }
 
-export function isTokenExpired(expirationTime: number | string) {
-  const currentTimestamp = Date.now();
-  const expirationTimestamp = Number(expirationTime) * 1000;
-  const expirationInHours = convertToHours(expirationTimestamp - currentTimestamp);
-
-  if (expirationInHours <= 0) return true;
-
-  return false;
-}
-
-function convertToHours(valueInMilliseconds: number) {
-  return valueInMilliseconds / (1000 * 60 * 60);
-}
-
 export async function issueNewAccessToken(
   refreshToken: string,
   refreshTokenPublicSecret: KeyLike,
@@ -135,4 +125,60 @@ export async function issueNewAccessToken(
     console.error('Error issuing new access token:', error);
     throw new Error('Failed to issue new access token');
   }
+}
+
+export async function insertTokens(
+  userId: number,
+  accessToken: string,
+  refreshToken: string,
+  expiresAt: string,
+) {
+  const now = new Date().toISOString();
+
+  await db
+    .insert(tokenTable)
+    .values({
+      userId,
+      accessToken,
+      refreshToken,
+      expiresAt,
+      createdAt: now,
+    })
+    .execute();
+}
+export async function validateToken(accessToken: string, refreshToken: string) {
+  const tokenRecord = await db
+    .select()
+    .from(tokenTable)
+    .where(eq(tokenTable.accessToken, accessToken))
+    .limit(1)
+    .execute();
+
+  if (!tokenRecord.length) return false;
+
+  const tokenData = tokenRecord[0];
+  const isAccessTokenExpired = new Date(tokenData.expiresAt) < new Date();
+
+  if (isAccessTokenExpired) {
+    return false;
+  }
+
+  return tokenData.refreshToken === refreshToken;
+}
+
+export async function updateTokens(
+  userId: number,
+  accessToken: string,
+  refreshToken: string,
+  expiresAt: string,
+) {
+  await db
+    .update(tokenTable)
+    .set({
+      accessToken,
+      refreshToken,
+      expiresAt,
+    })
+    .where(eq(tokenTable.userId, userId))
+    .execute();
 }

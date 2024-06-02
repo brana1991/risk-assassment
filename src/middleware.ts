@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { decodeJWT, isTokenExpired, issueNewAccessToken } from './auth/auth-actions';
+import { decodeJWT, issueNewAccessToken, updateTokens, validateToken } from './auth/auth-actions';
 import { JWTPayload, JWTVerifyResult, importSPKI } from 'jose';
-import { getTokensByUsername, updateActiveUser } from './auth/user-actions';
-import { User } from '../drizzle/schema';
+import { logoutUser, selectUserByUsername, updateUser } from './auth/user-actions';
 const spki = process.env.JWT_ACCESS_PUBLIC_SECRET;
-const spkiRefresh = process.env.JWT_REFRESH_PUBLIC_SECRET;
 
 export async function middleware(request: NextRequest) {
   const accessTokenCookie = request.cookies.get('accessToken')?.value;
@@ -16,35 +14,40 @@ export async function middleware(request: NextRequest) {
   }
 
   try {
-    const { sub, exp } = await getDecodedTokenValues(accessTokenCookie);
+    const accessTokenPublicKey = await importSPKI(spki as string, 'RS256');
+    const decoded = await decodeJWT(accessTokenCookie, accessTokenPublicKey);
 
-    if (!exp || !sub) return redirectToSignIn(request);
+    if ((decoded as { invalidToken: boolean })?.invalidToken) {
+      return await handleInvalidToken(request);
+    }
 
-    const loggedInUsername = sub;
-    const isAccessTokenExpired = isTokenExpired(exp);
+    if (!(decoded as JWTVerifyResult<JWTPayload>)?.payload?.sub) return null;
+    const username = (decoded as JWTVerifyResult<JWTPayload>).payload.sub as string;
 
-    const { match } = await compareDBTokensWithCookieTokens(
-      sub,
-      accessTokenCookie,
-      refreshTokenCookie,
-    );
+    const isValid = await validateToken(accessTokenCookie, refreshTokenCookie);
 
-    if (!match) return redirectToSignIn(request);
-
-    if (isAccessTokenExpired) {
-      const accessTokenRefreshKey = await importSPKI(spkiRefresh as string, 'RS256');
+    if (!isValid) {
+      const spkiRefresh = process.env.JWT_REFRESH_PUBLIC_SECRET;
+      const refreshTokenPublicKey = await importSPKI(spkiRefresh as string, 'RS256');
 
       const newAccessToken = await issueNewAccessToken(
         refreshTokenCookie,
-        accessTokenRefreshKey,
-        loggedInUsername,
+        refreshTokenPublicKey,
+        username,
       );
 
-      await updateActiveUser({
-        accessToken: newAccessToken,
-        refreshToken: refreshTokenCookie,
-        username: loggedInUsername,
-      });
+      if (!newAccessToken) {
+        return redirectToSignIn(request);
+      }
+
+      const user = await selectUserByUsername({ username });
+
+      if (!user) {
+        return redirectToSignIn(request);
+      }
+
+      const expiresAt = new Date(Date.now() + 5000).toISOString();
+      await updateTokens(user.id, newAccessToken, refreshTokenCookie, expiresAt);
 
       const response = NextResponse.next();
 
@@ -65,37 +68,21 @@ export async function middleware(request: NextRequest) {
   }
 }
 
-async function getDecodedTokenValues(accessTokenCookie: string): Promise<JWTPayload> {
-  try {
-    const accessTokenPublicKey = await importSPKI(spki as string, 'RS256');
-    const results = await decodeJWT(accessTokenCookie, accessTokenPublicKey);
+async function handleInvalidToken(request: NextRequest) {
+  const response = NextResponse.redirect(new URL('/sign-in', request.url));
 
-    return results.payload;
-  } catch (error) {
-    throw new Error('Failed to decideToken values');
-  }
-}
+  response.cookies.set('accessToken', '', {
+    expires: new Date(0),
+    path: '/',
+  });
 
-async function compareDBTokensWithCookieTokens(
-  username: User['username'],
-  accessTokenCookie: string,
-  refreshTokenCookie: string,
-): Promise<{ match: boolean }> {
-  try {
-    const tokensFromDb = await getTokensByUsername({ username });
+  response.cookies.set('refreshToken', '', {
+    expires: new Date(0),
+    path: '/',
+  });
 
-    if (
-      tokensFromDb &&
-      tokensFromDb.accessToken === accessTokenCookie &&
-      tokensFromDb.refreshToken === refreshTokenCookie
-    ) {
-      return { match: true };
-    } else {
-      return { match: false };
-    }
-  } catch (error) {
-    throw new Error('Failed to fetch logged-in user.');
-  }
+  await logoutUser({ isLoggedIn: 0 });
+  return response;
 }
 
 function redirectToSignIn(request: NextRequest) {

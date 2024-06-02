@@ -14,8 +14,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const accessToken = cookies().get('accessToken')?.value;
-  const loggedInUser = await selectLoggedInUser({ accessToken });
+  const loggedInUser = await selectLoggedInUser();
 
   return (
     <html lang="en">

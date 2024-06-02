@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `is_logged_in` integer DEFAULT 0 NOT NULL;

@@ -4,10 +4,6 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/root/drizzle/client';
 import { User, userTable } from '@/root/drizzle/schema';
 import { Argon2 } from '@/app/sign-up/actions';
-import { decodeJWT } from './auth-actions';
-import { importSPKI } from 'jose';
-
-const spki = process.env.JWT_ACCESS_PUBLIC_SECRET;
 
 type UserPayload = {
   userName: string;
@@ -56,9 +52,8 @@ export async function selectUserByUsername({
 }: {
   username: User['username'];
 }): Promise<Promise<User> | null> {
-  let userResponse;
   try {
-    userResponse = await db
+    const userResponse = await db
       .select()
       .from(userTable)
       .where(eq(userTable.username, username))
@@ -66,23 +61,22 @@ export async function selectUserByUsername({
       .execute();
 
     if (userResponse.length == 0) return null;
+    return userResponse[0];
   } catch (error) {
+    console.log('tu sam');
     throw new Error((error as Error).message);
   }
-
-  return userResponse[0];
 }
 
-type UpdateParams = { accessToken: string; refreshToken: string; username: User['username'] };
+type UpdateParams = { username: User['username']; isLoggedIn: number };
 
-export async function updateActiveUser({ accessToken, refreshToken, username }: UpdateParams) {
+export async function updateUser({ username, isLoggedIn }: UpdateParams) {
   try {
     await db
       .update(userTable)
       .set({
-        accessToken,
-        refreshToken,
         updatedAt: new Date().toISOString(),
+        isLoggedIn,
       })
       .where(eq(userTable.username, username))
       .execute();
@@ -91,44 +85,38 @@ export async function updateActiveUser({ accessToken, refreshToken, username }: 
   }
 }
 
-export async function selectLoggedInUser({
-  accessToken,
-}: {
-  accessToken: string | undefined;
-}): Promise<User | null> {
-  let user;
+export async function logoutUser({ isLoggedIn }: { isLoggedIn: number }) {
   try {
-    if (!accessToken) return null;
-
-    const accessTokenPublicKey = await importSPKI(spki as string, 'RS256');
-    const accessTokenDecoded = await decodeJWT(accessToken, accessTokenPublicKey);
-
-    if (!accessTokenDecoded?.payload.sub) return null;
-
-    user = await selectUserByUsername({ username: accessTokenDecoded.payload.sub });
-  } catch (error) {
-    console.error('Error fetching logged-in user:', error);
-    throw new Error('Failed to fetch logged-in user.');
-  }
-  return user;
-}
-
-export async function getTokensByUsername({
-  username,
-}: {
-  username: User['username'];
-}): Promise<{ accessToken: User['accessToken']; refreshToken: User['refreshToken'] } | null> {
-  try {
-    const tokensResponse = await db
-      .select({ accessToken: userTable.accessToken, refreshToken: userTable.refreshToken })
-      .from(userTable)
-      .where(eq(userTable.username, username))
-      .limit(1)
+    await db
+      .update(userTable)
+      .set({
+        updatedAt: new Date().toISOString(),
+        isLoggedIn,
+      })
+      .where(eq(userTable.isLoggedIn, 1))
       .execute();
-
-    if (tokensResponse.length == 0) return null;
-    return tokensResponse[0];
   } catch (error) {
     throw new Error((error as Error).message);
+  }
+}
+
+export async function selectLoggedInUser() {
+  try {
+    const user = await db
+      .select({
+        id: userTable.id,
+        email: userTable.email,
+        username: userTable.username,
+        isLoggedIn: userTable.isLoggedIn,
+      })
+      .from(userTable)
+      .where(eq(userTable.isLoggedIn, 1))
+      .execute()
+      .then((result) => result[0]);
+
+    return user;
+  } catch (error) {
+    console.error('Error selecting logged-in user:', error);
+    return null;
   }
 }

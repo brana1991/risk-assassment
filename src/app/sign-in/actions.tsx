@@ -2,9 +2,10 @@
 
 import { z } from 'zod';
 import argon2 from 'argon2';
-import { createJWTTokens, setAuthCookies } from '@/auth/auth-actions';
-import { selectUserByUsername, updateActiveUser } from '@/auth/user-actions';
+import { createJWTTokens, insertTokens, setAuthCookies } from '@/auth/auth-actions';
+import { selectUserByUsername, updateUser } from '@/auth/user-actions';
 import { redirect } from 'next/navigation';
+import { SignJWT } from 'jose';
 
 export type FormState = {
   errors: {
@@ -37,7 +38,13 @@ export async function signIn(_: FormState, formData: FormData) {
       username: selectedUser.username,
     });
 
-    await updateActiveUser({ accessToken, refreshToken, username: selectedUser.username });
+    const expiresAt = new Date(Date.now() + 5000).toISOString();
+
+    await insertTokens(selectedUser.id, accessToken, refreshToken, expiresAt);
+    await updateUser({
+      username: selectedUser.username,
+      isLoggedIn: 1,
+    });
     await setAuthCookies(selectedUser.username);
 
     return redirect('./dashboard');
