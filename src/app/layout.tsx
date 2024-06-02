@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { selectActiveUser } from '@/auth/helpers';
 import Link from 'next/link';
+import { selectLoggedInUser } from '@/auth/user-actions';
+import { cookies } from 'next/headers';
 
 export const metadata: Metadata = {
   title: 'Create Next App',
@@ -13,14 +14,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const activeUser = await selectActiveUser();
+  const accessToken = cookies().get('accessToken')?.value;
+  const loggedInUser = await selectLoggedInUser({ accessToken });
 
   return (
     <html lang="en">
       <body>
         <header className="flex justify-between p-3 bg-slate-200">
           <Link href="./">risk assasment</Link>
-          <p>{activeUser?.username}</p>
+          <p>{loggedInUser?.username}</p>
         </header>
         {children}
       </body>

@@ -1,54 +1,52 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {
-  decodeJWT,
-  isTokenExpired,
-  selectAccessTokensByUser,
-  selectActiveUser,
-} from './auth/helpers';
-import { issueNewAccessToken, updateActiveUser } from './auth/server-actions';
-import { importSPKI } from 'jose';
+import { decodeJWT, isTokenExpired, issueNewAccessToken } from './auth/auth-actions';
+import { JWTPayload, JWTVerifyResult, importSPKI } from 'jose';
+import { getTokensByUsername, updateActiveUser } from './auth/user-actions';
+import { User } from '../drizzle/schema';
+const spki = process.env.JWT_ACCESS_PUBLIC_SECRET;
+const spkiRefresh = process.env.JWT_REFRESH_PUBLIC_SECRET;
 
 export async function middleware(request: NextRequest) {
-  const activeUser = await selectActiveUser();
+  const accessTokenCookie = request.cookies.get('accessToken')?.value;
+  const refreshTokenCookie = request.cookies.get('refreshToken')?.value;
 
-  if (!activeUser) return NextResponse.redirect(new URL('/sign-in', request.url));
-
-  const accessTokens = await selectAccessTokensByUser({ username: activeUser.username });
-
-  if (!accessTokens?.accessToken || !accessTokens.refreshToken)
-    return NextResponse.redirect(new URL('/sign-in', request.url));
+  if (!accessTokenCookie || !refreshTokenCookie) {
+    return redirectToSignIn(request);
+  }
 
   try {
-    const spki = process.env.JWT_ACCESS_PUBLIC_SECRET;
-    const accessTokenPublicKey = await importSPKI(spki as string, 'RS256');
+    const { sub, exp } = await getDecodedTokenValues(accessTokenCookie);
 
-    const spkiRefresh = process.env.JWT_REFRESH_PUBLIC_SECRET;
-    const accessTokenRefreshKey = await importSPKI(spkiRefresh as string, 'RS256');
+    if (!exp || !sub) return redirectToSignIn(request);
 
-    const accessTokenDecoded = await decodeJWT(accessTokens.accessToken, accessTokenPublicKey);
+    const loggedInUsername = sub;
+    const isAccessTokenExpired = isTokenExpired(exp);
 
-    const isAccessTokenInvalid =
-      !accessTokenDecoded || isTokenExpired(accessTokenDecoded.payload.exp);
+    const { match } = await compareDBTokensWithCookieTokens(
+      sub,
+      accessTokenCookie,
+      refreshTokenCookie,
+    );
 
-    if (isAccessTokenInvalid) {
+    if (!match) return redirectToSignIn(request);
+
+    if (isAccessTokenExpired) {
+      const accessTokenRefreshKey = await importSPKI(spkiRefresh as string, 'RS256');
+
       const newAccessToken = await issueNewAccessToken(
-        accessTokens.refreshToken,
+        refreshTokenCookie,
         accessTokenRefreshKey,
-        activeUser,
+        loggedInUsername,
       );
-
-      if (!newAccessToken) {
-        throw new Error('Failed to issue new access token');
-      }
-
-      const response = NextResponse.next();
 
       await updateActiveUser({
         accessToken: newAccessToken,
-        refreshToken: accessTokens.refreshToken,
-        user: activeUser,
+        refreshToken: refreshTokenCookie,
+        username: loggedInUsername,
       });
+
+      const response = NextResponse.next();
 
       response.cookies.set('accessToken', newAccessToken, {
         secure: true,
@@ -63,8 +61,45 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   } catch (err) {
     console.error('Error in middleware:', err);
-    return NextResponse.redirect(new URL('/sign-in', request.url));
+    return redirectToSignIn(request);
   }
+}
+
+async function getDecodedTokenValues(accessTokenCookie: string): Promise<JWTPayload> {
+  try {
+    const accessTokenPublicKey = await importSPKI(spki as string, 'RS256');
+    const results = await decodeJWT(accessTokenCookie, accessTokenPublicKey);
+
+    return results.payload;
+  } catch (error) {
+    throw new Error('Failed to decideToken values');
+  }
+}
+
+async function compareDBTokensWithCookieTokens(
+  username: User['username'],
+  accessTokenCookie: string,
+  refreshTokenCookie: string,
+): Promise<{ match: boolean }> {
+  try {
+    const tokensFromDb = await getTokensByUsername({ username });
+
+    if (
+      tokensFromDb &&
+      tokensFromDb.accessToken === accessTokenCookie &&
+      tokensFromDb.refreshToken === refreshTokenCookie
+    ) {
+      return { match: true };
+    } else {
+      return { match: false };
+    }
+  } catch (error) {
+    throw new Error('Failed to fetch logged-in user.');
+  }
+}
+
+function redirectToSignIn(request: NextRequest) {
+  return NextResponse.redirect(new URL('/sign-in', request.url));
 }
 
 export const config = {

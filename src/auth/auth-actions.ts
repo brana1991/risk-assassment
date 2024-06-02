@@ -7,10 +7,8 @@ import {
   KeyLike,
   SignJWT,
 } from 'jose';
-import { User, userTable } from '../../drizzle/schema';
+import { User } from '../../drizzle/schema';
 import { cookies } from 'next/headers';
-import { db } from '../../drizzle/client';
-import { eq } from 'drizzle-orm';
 
 const claims = {
   protectedHeader: {
@@ -25,12 +23,16 @@ const claims = {
 
 type JWTTokens = { accessToken: string; refreshToken: string };
 
-export async function createJWTTokens({ user }: { user: User }): Promise<JWTTokens> {
+export async function createJWTTokens({
+  username,
+}: {
+  username: User['username'];
+}): Promise<JWTTokens> {
   if (!process.env.JWT_ACCESS_PRIVATE_SECRET || !process.env.JWT_REFRESH_PRIVATE_SECRET) {
     throw new Error('JWT_SECRET environment variable is not set');
   }
 
-  if (!user) {
+  if (!username) {
     throw new Error('User unavailable');
   }
 
@@ -45,10 +47,10 @@ export async function createJWTTokens({ user }: { user: User }): Promise<JWTToke
     const accessToken = await new SignJWT()
       .setProtectedHeader(claims.protectedHeader)
       .setIssuedAt(claims.iat)
-      .setExpirationTime('20s')
+      .setExpirationTime('5s')
       .setIssuer(claims.iss)
       .setAudience('Clients access token')
-      .setSubject(user.username)
+      .setSubject(username)
       .sign(accessTokenPrivateKey);
 
     const refreshToken = await new SignJWT()
@@ -57,7 +59,7 @@ export async function createJWTTokens({ user }: { user: User }): Promise<JWTToke
       .setExpirationTime('72h')
       .setIssuer(claims.iss)
       .setAudience('Clients refresh token')
-      .setSubject(user.username)
+      .setSubject(username)
       .sign(refreshTokenPrivateKey);
 
     return { accessToken, refreshToken };
@@ -71,17 +73,17 @@ export async function decodeJWT(
   token: string,
   publicKey: KeyLike | Uint8Array,
   options?: JWTVerifyOptions,
-): Promise<JWTVerifyResult<JWTPayload & { exp: number }> | null> {
+): Promise<JWTVerifyResult> {
   try {
-    return await jwtVerify(token, publicKey, options);
+    return await jwtVerify(token, publicKey, { currentDate: new Date(0) });
   } catch (error) {
     console.error('Error verifying token:', error);
-    return null;
+    throw new Error('Error verifying token');
   }
 }
 
-export async function setAuthCookies(user: User) {
-  const { accessToken, refreshToken } = await createJWTTokens({ user });
+export async function setAuthCookies(username: User['username']) {
+  const { accessToken, refreshToken } = await createJWTTokens({ username });
 
   if (accessToken && refreshToken) {
     cookies().set('accessToken', accessToken, {
@@ -100,45 +102,6 @@ export async function setAuthCookies(user: User) {
   }
 }
 
-export async function selectAccessTokensByUser({
-  username,
-}: {
-  username: User['username'];
-}): Promise<{ accessToken: User['accessToken']; refreshToken: User['refreshToken'] } | null> {
-  let tokensResponse;
-  try {
-    tokensResponse = await db
-      .select({ accessToken: userTable.accessToken, refreshToken: userTable.refreshToken })
-      .from(userTable)
-      .where(eq(userTable.username, username))
-      .limit(1)
-      .execute();
-
-    if (tokensResponse.length == 0) return null;
-  } catch (error) {
-    throw new Error((error as Error).message);
-  }
-
-  return tokensResponse[0];
-}
-
-export async function selectActiveUser(): Promise<User | null> {
-  let activeUser;
-  try {
-    activeUser = await db
-      .select()
-      .from(userTable)
-      .where(eq(userTable.isActive, 1))
-      .limit(1)
-      .execute();
-
-    if (activeUser.length == 0) return null;
-  } catch (error) {
-    throw new Error((error as Error).message);
-  }
-  return activeUser[0];
-}
-
 export function isTokenExpired(expirationTime: number | string) {
   const currentTimestamp = Date.now();
   const expirationTimestamp = Number(expirationTime) * 1000;
@@ -151,4 +114,25 @@ export function isTokenExpired(expirationTime: number | string) {
 
 function convertToHours(valueInMilliseconds: number) {
   return valueInMilliseconds / (1000 * 60 * 60);
+}
+
+export async function issueNewAccessToken(
+  refreshToken: string,
+  refreshTokenPublicSecret: KeyLike,
+  username: User['username'],
+) {
+  try {
+    const decodedRefreshToken = await decodeJWT(refreshToken, refreshTokenPublicSecret);
+
+    if (!decodedRefreshToken) {
+      throw new Error('Invalid refresh token');
+    }
+
+    const { accessToken } = await createJWTTokens({ username });
+
+    return accessToken;
+  } catch (error) {
+    console.error('Error issuing new access token:', error);
+    throw new Error('Failed to issue new access token');
+  }
 }

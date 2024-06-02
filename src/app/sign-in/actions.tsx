@@ -2,12 +2,9 @@
 
 import { z } from 'zod';
 import argon2 from 'argon2';
-import { createJWTTokens, setAuthCookies } from '@/auth/helpers';
+import { createJWTTokens, setAuthCookies } from '@/auth/auth-actions';
+import { selectUserByUsername, updateActiveUser } from '@/auth/user-actions';
 import { redirect } from 'next/navigation';
-import { db } from '../../../drizzle/client';
-import { User, userTable } from '../../../drizzle/schema';
-import { eq } from 'drizzle-orm';
-import { updateActiveUser } from '@/auth/server-actions';
 
 export type FormState = {
   errors: {
@@ -29,49 +26,32 @@ export async function signIn(_: FormState, formData: FormData) {
   }
 
   try {
-    const userResponse = await selectUserByUsername({ username: userPayload.userName });
+    const selectedUser = await selectUserByUsername({ username: userPayload.userName });
 
-    if (userResponse.length == 0) return mismatchError;
-
-    const selectedUser = userResponse[0];
+    if (!selectedUser) return mismatchError;
     const matchPasswords = await argon2.verify(selectedUser.password, userPayload.password);
 
     if (!matchPasswords) return mismatchError;
 
-    const { accessToken, refreshToken } = await createJWTTokens({ user: selectedUser });
+    const { accessToken, refreshToken } = await createJWTTokens({
+      username: selectedUser.username,
+    });
 
-    await updateActiveUser({ accessToken, refreshToken, user: selectedUser });
-    await setAuthCookies(selectedUser);
+    await updateActiveUser({ accessToken, refreshToken, username: selectedUser.username });
+    await setAuthCookies(selectedUser.username);
 
     return redirect('./dashboard');
   } catch (error) {
     console.error('Error occurred during sign-in:', error);
   }
 
-  redirect('./dashboard');
+  return redirect('./dashboard');
 }
 
 const formDataScheme = z.object({
   userName: z.string().min(6).max(20),
   password: z.string().min(6).max(20),
 });
-
-export async function selectUserByUsername({
-  username,
-}: {
-  username: User['username'];
-}): Promise<User[]> {
-  try {
-    return await db
-      .select()
-      .from(userTable)
-      .where(eq(userTable.username, username))
-      .limit(1)
-      .execute();
-  } catch (error) {
-    throw new Error((error as Error).message);
-  }
-}
 
 const mismatchError = {
   errors: {
