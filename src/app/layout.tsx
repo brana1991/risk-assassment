@@ -1,8 +1,17 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Link from 'next/link';
-import { selectLoggedInUser } from '@/auth/user-actions';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { LogoutButton } from '@/components/ui/loggout-button';
 import { cookies } from 'next/headers';
+import { getCurrentUser } from '@/auth/user-actions';
 
 export const metadata: Metadata = {
   title: 'Create Next App',
@@ -14,14 +23,35 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const loggedInUser = await selectLoggedInUser();
+  const loggedUser = await getCurrentUser();
 
   return (
     <html lang="en">
-      <body>
+      <body className="flex flex-col" style={{ height: '100svh' }}>
         <header className="flex justify-between p-3 bg-slate-200">
           <Link href="./">risk assasment</Link>
-          <p>{loggedInUser?.username}</p>
+          {loggedUser?.username ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger>{loggedUser.username}</DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem>
+                  <Link href="./dashboard/clients">Clients</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Link href="./dashboard/projects">Clients</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <LogoutButton />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <div>
+              <Link href="./sign-in">Sign-in</Link> / <Link href="./sign-up">Sign-up</Link>
+            </div>
+          )}
         </header>
         {children}
       </body>

@@ -1,36 +1,45 @@
 import { InferSelectModel } from 'drizzle-orm';
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 
 export const client = sqliteTable('client', {
-  id: integer('id').primaryKey().unique(),
+  id: text('id').primaryKey().notNull().unique(),
   name: text('name'),
-  address: text('name'),
-  identityNumber: integer('number'),
-  pib: integer('number').unique(),
-  responsiblePerson: text('name'),
+  address: text('address'),
+  identityNumber: integer('identity_number'),
+  pib: integer('pib').unique(),
+  responsiblePerson: text('responsible_person'),
 });
 
 export const userTable = sqliteTable('users', {
-  id: integer('id').primaryKey().notNull(),
+  id: text('id').primaryKey().notNull(),
   email: text('email').unique().notNull(),
-  username: text('username').notNull(),
+  username: text('username').unique().notNull(),
   password: text('password').notNull(),
   firstName: text('first_name'),
   lastName: text('last_name'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at'),
   isActive: integer('is_active'),
-  isLoggedIn: integer('is_logged_in').notNull().default(0),
 });
 
-export const tokenTable = sqliteTable('tokens', {
-  id: integer('id').primaryKey().notNull(),
-  userId: integer('user_id').notNull(),
+export const sessionTable = sqliteTable('session', {
+  sessionId: text('session_id').primaryKey().notNull(),
+  userId: text('user_id').references(() => userTable.id),
+  sessionStart: text('session_start').notNull(),
+  sessionEnd: text('session_end'),
   accessToken: text('access_token').notNull(),
   refreshToken: text('refresh_token').notNull(),
-  expiresAt: text('expires_at').notNull(),
-  createdAt: text('created_at').notNull(),
+  expiresAt: integer('expires_at').notNull(),
 });
 
-export type Token = InferSelectModel<typeof tokenTable>;
+export const projectTable = sqliteTable('projects', {
+  id: text('id').primaryKey().notNull(),
+  name: text('name').unique().notNull(),
+  ownerId: text('owner_id').references(() => userTable.id),
+  clientId: text('client_id').references(() => client.id),
+});
+
+export type Session = InferSelectModel<typeof sessionTable>;
 export type User = InferSelectModel<typeof userTable>;
+export type Projects = InferSelectModel<typeof projectTable>;
+export type Client = InferSelectModel<typeof client>;

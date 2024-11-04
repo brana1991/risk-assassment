@@ -1,64 +1,45 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { decodeJWT, issueNewAccessToken, updateTokens, validateToken } from './auth/auth-actions';
-import { JWTPayload, JWTVerifyResult, importSPKI } from 'jose';
-import { logoutUser, selectUserByUsername, updateUser } from './auth/user-actions';
+import {
+  decodeJWT,
+  checkForTokenInDB,
+  issueNewAccessToken,
+  updateSessionWithToken,
+  isTokenExpired,
+  verifyJWTSignature,
+  deleteSessionFromDB,
+} from './auth/auth-actions';
+import { importSPKI } from 'jose';
+
 const spki = process.env.JWT_ACCESS_PUBLIC_SECRET;
 
 export async function middleware(request: NextRequest) {
-  const accessTokenCookie = request.cookies.get('accessToken')?.value;
-  const refreshTokenCookie = request.cookies.get('refreshToken')?.value;
+  const accessToken = request.cookies.get('accessToken')?.value;
+  const refreshToken = request.cookies.get('refreshToken')?.value;
 
-  if (!accessTokenCookie || !refreshTokenCookie) {
+  if (!accessToken || !refreshToken) {
     return redirectToSignIn(request);
   }
 
   try {
-    const accessTokenPublicKey = await importSPKI(spki as string, 'RS256');
-    const decoded = await decodeJWT(accessTokenCookie, accessTokenPublicKey);
+    const accessTokenKey = await importSPKI(spki as string, 'RS256');
+    const verifiedJWT = await verifyJWTSignature({
+      token: accessToken,
+      key: accessTokenKey,
+    });
 
-    if ((decoded as { invalidToken: boolean })?.invalidToken) {
-      return await handleInvalidToken(request);
+    if (!verifiedJWT) {
+      return await clearSessionAndRedirect({ accessToken, request });
     }
 
-    if (!(decoded as JWTVerifyResult<JWTPayload>)?.payload?.sub) return null;
-    const username = (decoded as JWTVerifyResult<JWTPayload>).payload.sub as string;
+    const sessionId = verifiedJWT?.payload.sub as string;
+    const expiration = verifiedJWT?.payload.exp as number;
 
-    const isValid = await validateToken(accessTokenCookie, refreshTokenCookie);
+    const isTokenInDB = await checkForTokenInDB(sessionId, accessToken);
+    const isExpired = !isTokenExpired(expiration);
 
-    if (!isValid) {
-      const spkiRefresh = process.env.JWT_REFRESH_PUBLIC_SECRET;
-      const refreshTokenPublicKey = await importSPKI(spkiRefresh as string, 'RS256');
-
-      const newAccessToken = await issueNewAccessToken(
-        refreshTokenCookie,
-        refreshTokenPublicKey,
-        username,
-      );
-
-      if (!newAccessToken) {
-        return redirectToSignIn(request);
-      }
-
-      const user = await selectUserByUsername({ username });
-
-      if (!user) {
-        return redirectToSignIn(request);
-      }
-
-      const expiresAt = new Date(Date.now() + 5000).toISOString();
-      await updateTokens(user.id, newAccessToken, refreshTokenCookie, expiresAt);
-
-      const response = NextResponse.next();
-
-      response.cookies.set('accessToken', newAccessToken, {
-        secure: true,
-        httpOnly: true,
-        path: '/',
-        sameSite: 'strict',
-      });
-
-      return response;
+    if (isTokenInDB && isExpired) {
+      return await renewAccessToken(sessionId);
     }
 
     return NextResponse.next();
@@ -68,20 +49,40 @@ export async function middleware(request: NextRequest) {
   }
 }
 
-async function handleInvalidToken(request: NextRequest) {
+type ClearParams = {
+  accessToken: string;
+  request: NextRequest;
+};
+
+async function clearJWTCookies(response: NextResponse) {
+  response.cookies.delete('accessToken');
+  response.cookies.delete('refreshToken');
+}
+
+export async function clearSessionAndRedirect({ accessToken, request }: ClearParams) {
+  const decodedJWT = await decodeJWT(accessToken);
+  const sessionId = decodedJWT?.kid as string;
+
   const response = NextResponse.redirect(new URL('/sign-in', request.url));
 
-  response.cookies.set('accessToken', '', {
-    expires: new Date(0),
+  await deleteSessionFromDB({ sessionId });
+  await clearJWTCookies(response);
+
+  return response;
+}
+
+async function renewAccessToken(sessionId: string) {
+  const newAccessToken = await issueNewAccessToken({ sessionId });
+  await updateSessionWithToken(sessionId, newAccessToken);
+
+  const response = NextResponse.next();
+  response.cookies.set('accessToken', newAccessToken, {
+    secure: false,
+    httpOnly: true,
     path: '/',
+    sameSite: 'strict',
   });
 
-  response.cookies.set('refreshToken', '', {
-    expires: new Date(0),
-    path: '/',
-  });
-
-  await logoutUser({ isLoggedIn: 0 });
   return response;
 }
 

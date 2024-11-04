@@ -1,4 +1,4 @@
-import { PropsWithChildren, forwardRef } from 'react';
+import { PropsWithChildren } from 'react';
 
 export const FormError = ({ children }: PropsWithChildren) => {
   return (

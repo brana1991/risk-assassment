@@ -1,5 +1,5 @@
 'use server';
-import { registerUser } from '@/auth/user-actions';
+import { insertUser } from '@/auth/user-actions';
 import argon2 from 'argon2';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -27,7 +27,7 @@ export async function signUp(_: FormState, formData: FormData) {
   }
 
   try {
-    await registerUser(userPayload, argon2.hash);
+    await insertUser(userPayload, argon2.hash);
   } catch (error) {
     console.error(error);
     throw error;

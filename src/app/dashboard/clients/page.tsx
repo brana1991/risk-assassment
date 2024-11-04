@@ -8,8 +8,9 @@ import {
 } from '@/components/ui/card';
 import { db } from '../../../../drizzle/client';
 import { client } from '../../../../drizzle/schema';
+import { Button } from '@/components/ui/button';
 
-async function getAllEmployers() {
+export async function getAllEmployers() {
   try {
     const clients = await db.select().from(client);
 
@@ -24,27 +25,25 @@ export default async function Clients() {
   const clients = await getAllEmployers();
 
   return (
-    <div
-      style={{
-        gridTemplateColumns:
-          'minmax(100px, 1fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(100px, 1fr)',
-      }}
-      className="grid gap-10"
-    >
+    <div className="grid gap-10 items-start grid-cols-1">
       {clients.map((client) => (
         <Card key={client.id}>
           <CardHeader>
-            <CardTitle>Klijent</CardTitle>
-            <CardDescription>{client.name}</CardDescription>
+            <CardTitle>{client.name}</CardTitle>
+            <CardDescription>{client.address}</CardDescription>
           </CardHeader>
           <CardContent>
-            <p>{client.address}</p>
-            <p>{client.identityNumber}</p>
-            <p>{client.pib}</p>
-            <p>{client.responsiblePerson}</p>
+            <CardDescription className="mb-2">
+              <b>PIB:</b> {client.pib}
+            </CardDescription>
+            <CardDescription>
+              <b>Contact Person:</b> {client.responsiblePerson}
+            </CardDescription>
           </CardContent>
           <CardFooter>
-            <button>Zapocni projekat</button>
+            <Button variant="outline" className="ml-auto h-6">
+              Edit
+            </Button>
           </CardFooter>
         </Card>
       ))}

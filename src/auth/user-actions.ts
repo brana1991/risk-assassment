@@ -2,8 +2,12 @@
 
 import { eq } from 'drizzle-orm';
 import { db } from '@/root/drizzle/client';
-import { User, userTable } from '@/root/drizzle/schema';
+import { Session, User, sessionTable, userTable } from '@/root/drizzle/schema';
 import { Argon2 } from '@/app/sign-up/actions';
+import { decodeJWT, deleteSessionFromDB } from './auth-actions';
+import { cookies } from 'next/headers';
+
+import { v4 as uuidv4 } from 'uuid';
 
 type UserPayload = {
   userName: string;
@@ -11,47 +15,31 @@ type UserPayload = {
   email: string;
 };
 
-export async function registerUser(userPayload: UserPayload, hashFunction: Argon2['hash']) {
+export async function insertUser(userPayload: UserPayload, hashFunction: Argon2['hash']) {
   const hashedPassword = await hashFunction(userPayload.password);
-  let userId: number;
+  const id = uuidv4();
 
   try {
-    const result = await db
+    await db
       .insert(userTable)
       .values({
-        createdAt: new Date().toISOString(),
-        email: userPayload.email,
+        id,
         username: userPayload.userName,
         password: hashedPassword,
+        email: userPayload.email,
+        createdAt: new Date().toISOString(),
       })
       .returning({ id: userTable.id })
       .execute();
-
-    userId = result[0].id;
   } catch (error) {
     console.error('Error occurred during user registration:', error);
     throw new Error('Failed to register user.');
   }
-
-  const createdUser = await db
-    .select()
-    .from(userTable)
-    .where(eq(userTable.id, userId))
-    .limit(1)
-    .execute();
-
-  if (createdUser.length === 0) {
-    throw new Error('User not found after registration.');
-  }
-
-  return createdUser[0];
 }
 
-export async function selectUserByUsername({
-  username,
-}: {
-  username: User['username'];
-}): Promise<Promise<User> | null> {
+type SelectProps = { username: User['username'] };
+
+export async function selectUser({ username }: SelectProps): Promise<Promise<User> | null> {
   try {
     const userResponse = await db
       .select()
@@ -61,62 +49,56 @@ export async function selectUserByUsername({
       .execute();
 
     if (userResponse.length == 0) return null;
+
     return userResponse[0];
   } catch (error) {
-    console.log('tu sam');
+    console.log('Error selecting user', error);
     throw new Error((error as Error).message);
   }
 }
 
-type UpdateParams = { username: User['username']; isLoggedIn: number };
-
-export async function updateUser({ username, isLoggedIn }: UpdateParams) {
+export async function logoutUser() {
   try {
-    await db
-      .update(userTable)
-      .set({
-        updatedAt: new Date().toISOString(),
-        isLoggedIn,
-      })
-      .where(eq(userTable.username, username))
-      .execute();
+    const accessToken = cookies().get('accessToken')?.value as string;
+    const decodedJWT = await decodeJWT(accessToken);
+    const sessionId = decodedJWT?.kid as string;
+
+    const removedSession = await deleteSessionFromDB({ sessionId });
+
+    return removedSession;
   } catch (error) {
     throw new Error((error as Error).message);
   }
 }
 
-export async function logoutUser({ isLoggedIn }: { isLoggedIn: number }) {
-  try {
-    await db
-      .update(userTable)
-      .set({
-        updatedAt: new Date().toISOString(),
-        isLoggedIn,
-      })
-      .where(eq(userTable.isLoggedIn, 1))
-      .execute();
-  } catch (error) {
-    throw new Error((error as Error).message);
-  }
-}
+export async function getCurrentUser() {
+  const accessTokenCookie = cookies().get('accessToken')?.value as string;
+  const decodedJWT = await decodeJWT(accessTokenCookie);
+  const sessionId = decodedJWT?.kid as string;
 
-export async function selectLoggedInUser() {
   try {
+    const sessions: Session[] = await db
+      .select()
+      .from(sessionTable)
+      .where(eq(sessionTable.sessionId, sessionId))
+      .limit(1)
+      .execute();
+
+    if (!sessions.length) {
+      return null;
+    }
+    const session = sessions[0];
+
     const user = await db
-      .select({
-        id: userTable.id,
-        email: userTable.email,
-        username: userTable.username,
-        isLoggedIn: userTable.isLoggedIn,
-      })
+      .select()
       .from(userTable)
-      .where(eq(userTable.isLoggedIn, 1))
-      .execute()
-      .then((result) => result[0]);
+      .where(eq(userTable.id, session.userId as string))
+      .limit(1)
+      .execute();
 
-    return user;
+    return user[0];
   } catch (error) {
-    console.error('Error selecting logged-in user:', error);
+    console.error('Error retrieving current user:', error);
     return null;
   }
 }

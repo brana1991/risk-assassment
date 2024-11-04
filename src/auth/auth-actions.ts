@@ -1,58 +1,56 @@
+'use server';
+
 import {
+  decodeJwt,
+  decodeProtectedHeader,
   importPKCS8,
-  JWTPayload,
+  JWTHeaderParameters,
   jwtVerify,
   JWTVerifyOptions,
-  JWTVerifyResult,
   KeyLike,
   SignJWT,
 } from 'jose';
-import { tokenTable, User } from '../../drizzle/schema';
-import { cookies } from 'next/headers';
+import { Session, sessionTable, User, userTable } from '../../drizzle/schema';
 import { db } from '@/root/drizzle/client';
-import { eq } from 'drizzle-orm';
-
-const claims = {
-  protectedHeader: {
-    alg: 'RS256',
-    typ: 'JWT',
-    cty: 'JWT',
-    kid: '12345',
-  },
-  iss: 'Majstor Brana',
-  iat: Math.floor(Date.now()),
-};
+import { and, eq } from 'drizzle-orm';
+import { cookies } from 'next/headers';
 
 type JWTTokens = { accessToken: string; refreshToken: string };
+type CreateProps = { sessionId: Session['sessionId'] };
 
-export async function createJWTTokens({
-  username,
-}: {
-  username: User['username'];
-}): Promise<JWTTokens> {
+export async function createJWTTokens({ sessionId }: CreateProps): Promise<JWTTokens> {
   if (!process.env.JWT_ACCESS_PRIVATE_SECRET || !process.env.JWT_REFRESH_PRIVATE_SECRET) {
     throw new Error('JWT_SECRET environment variable is not set');
   }
 
-  if (!username) {
-    throw new Error('User unavailable');
-  }
-
   try {
+    const kid = sessionId;
     const alg = 'RS256';
+
     const pkcs8Access = process.env.JWT_ACCESS_PRIVATE_SECRET;
     const accessTokenPrivateKey = await importPKCS8(pkcs8Access, alg);
 
     const pkcs8ARefresh = process.env.JWT_REFRESH_PRIVATE_SECRET;
     const refreshTokenPrivateKey = await importPKCS8(pkcs8ARefresh, alg);
 
-    const accessToken = await new SignJWT()
+    const claims = {
+      protectedHeader: {
+        alg: alg,
+        typ: 'JWT',
+        cty: 'JWT',
+        kid: kid,
+      } as JWTHeaderParameters,
+      iss: 'Majstor Brana',
+      iat: Math.floor(Date.now()),
+    };
+
+    const accessToken = await new SignJWT({ sessionId })
       .setProtectedHeader(claims.protectedHeader)
       .setIssuedAt(claims.iat)
-      .setExpirationTime('5s')
+      .setExpirationTime('10m')
       .setIssuer(claims.iss)
       .setAudience('Clients access token')
-      .setSubject(username)
+      .setSubject(sessionId)
       .sign(accessTokenPrivateKey);
 
     const refreshToken = await new SignJWT()
@@ -61,7 +59,7 @@ export async function createJWTTokens({
       .setExpirationTime('72h')
       .setIssuer(claims.iss)
       .setAudience('Clients refresh token')
-      .setSubject(username)
+      .setSubject(sessionId)
       .sign(refreshTokenPrivateKey);
 
     return { accessToken, refreshToken };
@@ -71,34 +69,47 @@ export async function createJWTTokens({
   }
 }
 
-export async function decodeJWT(
-  token: string,
-  publicKey: KeyLike | Uint8Array,
-  options?: JWTVerifyOptions,
-): Promise<JWTVerifyResult<JWTPayload> | { invalidToken: boolean }> {
+export async function decodeJWT(token: string) {
   try {
-    return await jwtVerify(token, publicKey, options);
+    const protectedHeader = decodeProtectedHeader(token);
+
+    return protectedHeader;
   } catch (error) {
-    if ((error as { code: string }).code === 'ERR_JWT_EXPIRED') {
-      return jwtVerify(token, publicKey, { ...options, currentDate: new Date(0) });
-    }
-    return { invalidToken: true };
+    console.log(error);
+    return null;
   }
 }
 
-export async function setAuthCookies(username: User['username']) {
-  const { accessToken, refreshToken } = await createJWTTokens({ username });
+type VerifyJWT = {
+  token: string;
+  key: KeyLike | Uint8Array;
+  options?: JWTVerifyOptions;
+};
+export async function verifyJWTSignature({ token, key, options }: VerifyJWT) {
+  try {
+    const verifiedPayload = await jwtVerify(token, key, {
+      ...options,
+      currentDate: new Date(0),
+    });
 
-  if (accessToken && refreshToken) {
+    return verifiedPayload;
+  } catch (error) {
+    console.log(error);
+    return null;
+  }
+}
+
+export async function setAuthCookies(accessToken: string, refreshToken: string) {
+  if (accessToken) {
     cookies().set('accessToken', accessToken, {
-      secure: true,
+      secure: false,
       httpOnly: true,
       path: '/',
       sameSite: 'strict',
     });
 
     cookies().set('refreshToken', refreshToken, {
-      secure: true,
+      secure: false,
       httpOnly: true,
       path: '/',
       sameSite: 'strict',
@@ -106,19 +117,13 @@ export async function setAuthCookies(username: User['username']) {
   }
 }
 
-export async function issueNewAccessToken(
-  refreshToken: string,
-  refreshTokenPublicSecret: KeyLike,
-  username: User['username'],
-) {
+type IssueTokenParams = {
+  sessionId: Session['sessionId'];
+};
+
+export async function issueNewAccessToken({ sessionId }: IssueTokenParams) {
   try {
-    const decodedRefreshToken = await decodeJWT(refreshToken, refreshTokenPublicSecret);
-
-    if (!decodedRefreshToken) {
-      throw new Error('Invalid refresh token');
-    }
-
-    const { accessToken } = await createJWTTokens({ username });
+    const { accessToken } = await createJWTTokens({ sessionId });
 
     return accessToken;
   } catch (error) {
@@ -127,58 +132,97 @@ export async function issueNewAccessToken(
   }
 }
 
-export async function insertTokens(
-  userId: number,
-  accessToken: string,
-  refreshToken: string,
-  expiresAt: string,
-) {
+type Params = {
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+  userId: string;
+};
+
+export async function createSession({ accessToken, refreshToken, sessionId, userId }: Params) {
   const now = new Date().toISOString();
+  const decodedJWT = await decodeJwt(accessToken);
+  const exp = decodedJWT.exp as number;
 
-  await db
-    .insert(tokenTable)
-    .values({
-      userId,
-      accessToken,
-      refreshToken,
-      expiresAt,
-      createdAt: now,
-    })
-    .execute();
+  try {
+    await db
+      .insert(sessionTable)
+      .values({
+        userId,
+        accessToken,
+        refreshToken,
+        expiresAt: exp,
+        sessionStart: now,
+        sessionId,
+      })
+      .returning()
+      .execute()
+      .then((result) => result[0]);
+  } catch (error) {
+    console.log('Error Creating Session', error);
+  }
 }
-export async function validateToken(accessToken: string, refreshToken: string) {
-  const tokenRecord = await db
-    .select()
-    .from(tokenTable)
-    .where(eq(tokenTable.accessToken, accessToken))
-    .limit(1)
-    .execute();
 
-  if (!tokenRecord.length) return false;
+export async function checkForTokenInDB(sessionId: string, accessToken: string) {
+  try {
+    const sessionRecord = await db
+      .select()
+      .from(sessionTable)
+      .where(and(eq(sessionTable.sessionId, sessionId), eq(sessionTable.accessToken, accessToken)))
+      .execute();
 
-  const tokenData = tokenRecord[0];
-  const isAccessTokenExpired = new Date(tokenData.expiresAt) < new Date();
+    if (!sessionRecord.length) return false;
+
+    return true;
+  } catch (error) {
+    console.log(error);
+  }
+}
+export async function isTokenExpired(expiration: number) {
+  const isAccessTokenExpired = new Date(expiration) > new Date();
 
   if (isAccessTokenExpired) {
-    return false;
+    return true;
   }
 
-  return tokenData.refreshToken === refreshToken;
+  return false;
 }
 
-export async function updateTokens(
-  userId: number,
-  accessToken: string,
-  refreshToken: string,
-  expiresAt: string,
-) {
-  await db
-    .update(tokenTable)
-    .set({
-      accessToken,
-      refreshToken,
-      expiresAt,
-    })
-    .where(eq(tokenTable.userId, userId))
-    .execute();
+export async function updateSessionWithToken(sessionId: string, accessToken: string) {
+  try {
+    const decodedJWT = await decodeJwt(accessToken);
+    const exp = decodedJWT.exp as number;
+
+    await db
+      .update(sessionTable)
+      .set({
+        accessToken,
+        expiresAt: exp,
+      })
+      .where(eq(sessionTable.sessionId, sessionId))
+      .execute();
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+export async function clearJWTCookies() {
+  cookies().delete('accessToken');
+  cookies().delete('refreshToken');
+}
+
+type DeleteSessionProps = { sessionId: string };
+
+export async function deleteSessionFromDB({ sessionId }: DeleteSessionProps) {
+  try {
+    const deletedToken = await db
+      .delete(sessionTable)
+      .where(eq(sessionTable.sessionId, sessionId))
+      .returning();
+
+    return deletedToken;
+  } catch (error) {
+    console.error('Error deleting session from db:', error);
+    return null;
+  }
 }

@@ -5,57 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1717210627487,
-      "tag": "0000_panoramic_wendigo",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1717213584083,
-      "tag": "0001_bright_night_nurse",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1717235956141,
-      "tag": "0002_living_carnage",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1717280563261,
-      "tag": "0003_red_matthew_murdock",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1717283000678,
-      "tag": "0004_violet_rage",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1717332117937,
-      "tag": "0005_nostalgic_robin_chapel",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1717332315446,
-      "tag": "0006_early_dark_beast",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1717332754976,
-      "tag": "0007_legal_bruce_banner",
+      "when": 1730681602371,
+      "tag": "0000_steady_patch",
       "breakpoints": true
     }
   ]

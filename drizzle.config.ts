@@ -1,7 +1,5 @@
 import { defineConfig } from 'drizzle-kit';
 
-console.log(process.env.TURSO_AUTH_TOKEN, 'ovde');
-
 export default defineConfig({
   schema: './drizzle/schema.ts',
   out: './drizzle',
