@@ -20,11 +20,8 @@ export const Form = () => {
   const [state, formAction] = useFormState(createClient, initialFormState);
 
   return (
-    <form
-      action={formAction}
-      className="flex flex-col gap-7 w-1/2 bg-gradient-to-b from-blue-200 to-blue-400 rounded-lg p-5"
-    >
-      <div className="grid gap-2 flex-col relative relative">
+    <form action={formAction} className="flex flex-col gap-7 w-1/2 mt-16">
+      <div className="grid gap-2 flex-col relative">
         <Label className="row-start-1 row-end-2">Naziv Firme</Label>
         <Input
           type="text"

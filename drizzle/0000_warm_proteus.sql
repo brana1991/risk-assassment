@@ -1,10 +1,10 @@
 CREATE TABLE `client` (
 	`id` text PRIMARY KEY NOT NULL,
-	`name` text,
-	`address` text,
-	`identity_number` integer,
-	`pib` integer,
-	`responsible_person` text
+	`name` text NOT NULL,
+	`address` text NOT NULL,
+	`identity_number` integer NOT NULL,
+	`pib` integer NOT NULL,
+	`responsible_person` text NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `projects` (
@@ -12,6 +12,7 @@ CREATE TABLE `projects` (
 	`name` text NOT NULL,
 	`owner_id` text,
 	`client_id` text,
+	`type` text NOT NULL,
 	FOREIGN KEY (`owner_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`client_id`) REFERENCES `client`(`id`) ON UPDATE no action ON DELETE no action
 );

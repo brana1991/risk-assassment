@@ -75,6 +75,7 @@ export async function insertProject(data: ProjectFormData) {
         name: data.name,
         clientId: data.clientName,
         ownerId: user?.id,
+        type: 'catastrophe_risk_assessment',
       })
       .execute();
 

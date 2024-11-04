@@ -33,6 +33,9 @@ const FormSchema = z.object({
   clientName: z.string({
     required_error: 'Please select client name',
   }),
+  projectType: z.string({
+    required_error: 'Please select client name',
+  }),
 });
 
 export type FormData = typeof FormSchema;
@@ -83,6 +86,27 @@ export default function CreateProjectForm({ clients }: Props) {
                               {client.name}
                             </SelectItem>
                           ))}
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="projectType"
+                  render={({ field }) => (
+                    <>
+                      <Label htmlFor="name" className="text-right w-max">
+                        Project type
+                      </Label>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <SelectTrigger className="col-span-3">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent className="col-span-3">
+                          <SelectItem value="ПРОЦЕНА РИЗИКА ОД КАТАСТРОФА">
+                            ПРОЦЕНА РИЗИКА ОД КАТАСТРОФА
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </>

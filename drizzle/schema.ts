@@ -37,6 +37,7 @@ export const projectTable = sqliteTable('projects', {
   name: text('name').unique().notNull(),
   ownerId: text('owner_id').references(() => userTable.id),
   clientId: text('client_id').references(() => client.id),
+  type: text('type').notNull(),
 });
 
 export type Session = InferSelectModel<typeof sessionTable>;
