@@ -9,6 +9,7 @@ import {
 import { db } from '../../../../drizzle/client';
 import { client } from '../../../../drizzle/schema';
 import { Button } from '@/components/ui/button';
+import { eq } from 'drizzle-orm';
 
 export async function getAllEmployers() {
   try {
@@ -20,12 +21,22 @@ export async function getAllEmployers() {
     throw error;
   }
 }
+export async function getClientById(id: string) {
+  try {
+    const clientResponse = await db.select().from(client).where(eq(client.id, id));
+
+    return clientResponse[0];
+  } catch (error) {
+    console.error('Error retrieving employers:', error);
+    throw error;
+  }
+}
 
 export default async function Clients() {
   const clients = await getAllEmployers();
 
   return (
-    <div className="grid gap-10 items-start grid-cols-1">
+    <div className="grid grid-cols-4 gap-4">
       {clients.map((client) => (
         <Card key={client.id}>
           <CardHeader>

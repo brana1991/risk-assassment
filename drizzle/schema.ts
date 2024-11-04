@@ -3,11 +3,11 @@ import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core'
 
 export const client = sqliteTable('client', {
   id: text('id').primaryKey().notNull().unique(),
-  name: text('name'),
-  address: text('address'),
-  identityNumber: integer('identity_number'),
-  pib: integer('pib').unique(),
-  responsiblePerson: text('responsible_person'),
+  name: text('name').notNull(),
+  address: text('address').notNull(),
+  identityNumber: integer('identity_number').notNull(),
+  pib: integer('pib').unique().notNull(),
+  responsiblePerson: text('responsible_person').notNull(),
 });
 
 export const userTable = sqliteTable('users', {

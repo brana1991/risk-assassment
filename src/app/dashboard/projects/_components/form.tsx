@@ -20,7 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-import { useForm, UseFormHandleSubmit } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Form, FormField, FormItem } from '@/components/ui/form';
 import { Client } from '@/root/drizzle/schema';

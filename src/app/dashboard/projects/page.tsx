@@ -1,17 +1,20 @@
 'use server';
 
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
 
 import { getCurrentUser } from '@/auth/user-actions';
 import { db } from '@/root/drizzle/client';
-import { projectTable, userTable } from '@/root/drizzle/schema';
+import { projectTable } from '@/root/drizzle/schema';
 import CreateProjectForm from './_components/form';
 import { getAllEmployers } from '../clients/page';
 import { eq } from 'drizzle-orm';
 import { ProjectCards } from './_components/projects';
+import path from 'path';
 
 export default async function Projects() {
   const clients = await getAllEmployers();
+  const projects = await getUserProjects();
 
   return (
     <>
@@ -19,7 +22,7 @@ export default async function Projects() {
         <CreateProjectForm clients={clients} />
       </div>
       <div className="mt-4">
-        <ProjectCards />
+        <ProjectCards projects={projects} />
       </div>
     </>
   );
@@ -47,11 +50,24 @@ export async function getUserProjects() {
   }
 }
 
+export async function getProjectById(id: string) {
+  try {
+    const project = await db.select().from(projectTable).where(eq(projectTable.id, id));
+
+    return project[0];
+  } catch (error) {
+    console.error('Error retrieving employers:', error);
+    throw error;
+  }
+}
+
 export async function insertProject(data: ProjectFormData) {
   const id = uuidv4();
   const user = await getCurrentUser();
 
   try {
+    const folderPath = path.join(process.cwd(), 'public', 'project-files', id);
+
     await db
       .insert(projectTable)
       .values({
@@ -61,6 +77,18 @@ export async function insertProject(data: ProjectFormData) {
         ownerId: user?.id,
       })
       .execute();
+
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdir(folderPath, { recursive: true }, (err) => {
+        if (err) {
+          console.error(`Error creating folder: ${err}`);
+        } else {
+          console.log(`Folder created at ${folderPath}`);
+        }
+      });
+    } else {
+      console.log('Folder already exists');
+    }
   } catch (error) {
     console.error('Error occurred during user registration:', error);
     throw new Error('Failed to register user.');
