@@ -7,26 +7,28 @@ import { Argon2 } from '@/app/sign-up/actions';
 import { decodeJWT, deleteSessionFromDB } from './auth-actions';
 import { cookies } from 'next/headers';
 
-import { v4 as uuidv4 } from 'uuid';
-
 type UserPayload = {
   userName: string;
   password: string;
   email: string;
+  id: string;
+  workingGroupDocuments: string[];
+  neutralPersonDocuments: string[];
 };
 
 export async function insertUser(userPayload: UserPayload, hashFunction: Argon2['hash']) {
   const hashedPassword = await hashFunction(userPayload.password);
-  const id = uuidv4();
 
   try {
     await db
       .insert(userTable)
       .values({
-        id,
+        id: userPayload.id,
         username: userPayload.userName,
         password: hashedPassword,
         email: userPayload.email,
+        workingGroupDocuments: JSON.stringify(userPayload.workingGroupDocuments),
+        neutralPersonDocuments: JSON.stringify(userPayload.neutralPersonDocuments),
         createdAt: new Date().toISOString(),
       })
       .returning({ id: userTable.id })
